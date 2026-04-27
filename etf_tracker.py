@@ -40,9 +40,10 @@ def _from_gsheet(etf_code: str) -> Optional[list]:
         for row in reader:
             code = row.get("\u4ee3\u865f", row.get("Code", "")).strip()
             name = row.get("\u540d\u7a31", row.get("Name", "")).strip()
-            shares_raw = row.get("\u80a1\u6578", row.get("Shares", "0")).strip()
+            # Support both \u80a1\u6578 (\u80a1\u6578) and \u6301\u6709\u6578 (\u6301\u6709\u6578)
+            shares_raw = row.get("\u80a1\u6578", row.get("\u6301\u6709\u6578", row.get("Shares", "0"))).strip()
             weight = _safe_float(row.get("\u6b0a\u91cd", row.get("Weight", "0")))
-            if not code: continue
+            if not code or code in ("C_NTD", "CASH"): continue
             holdings.append({"code": code, "name": name, "shares": _safe_lots(shares_raw), "weight": weight})
         logger.info(f"GSheet {etf_code}: {len(holdings)} holdings")
         return holdings or None
