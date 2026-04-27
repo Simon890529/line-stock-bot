@@ -35,14 +35,18 @@ def _from_gsheet(etf_code: str) -> Optional[list]:
     try:
         resp = requests.get(url, headers=_HEADERS, timeout=15, verify=False)
         resp.raise_for_status()
-        reader = csv.DictReader(io.StringIO(resp.text))
+        # Decode with utf-8-sig to strip BOM that Google Sheets adds
+        text = resp.content.decode("utf-8-sig")
+        reader = csv.DictReader(io.StringIO(text))
         holdings = []
         for row in reader:
-            code = row.get("\u4ee3\u865f", row.get("Code", "")).strip()
-            name = row.get("\u540d\u7a31", row.get("Name", "")).strip()
-            # Support both \u80a1\u6578 (\u80a1\u6578) and \u6301\u6709\u6578 (\u6301\u6709\u6578)
-            shares_raw = row.get("\u80a1\u6578", row.get("\u6301\u6709\u6578", row.get("Shares", "0"))).strip()
-            weight = _safe_float(row.get("\u6b0a\u91cd", row.get("Weight", "0")))
+            # Strip BOM from all keys just in case
+            clean_row = {k.lstrip("\ufeff").strip(): v for k, v in row.items()}
+            code = clean_row.get("\u4ee3\u865f", clean_row.get("Code", "")).strip()
+            name = clean_row.get("\u540d\u7a31", clean_row.get("Name", "")).strip()
+            # Support both \u80a1\u6578 and \u6301\u6709\u6578 (\u6301\u6709\u6578)
+            shares_raw = clean_row.get("\u80a1\u6578", clean_row.get("\u6301\u6709\u6578", clean_row.get("Shares", "0"))).strip()
+            weight = _safe_float(clean_row.get("\u6b0a\u91cd", clean_row.get("Weight", "0")))
             if not code or code in ("C_NTD", "CASH"): continue
             holdings.append({"code": code, "name": name, "shares": _safe_lots(shares_raw), "weight": weight})
         logger.info(f"GSheet {etf_code}: {len(holdings)} holdings")
