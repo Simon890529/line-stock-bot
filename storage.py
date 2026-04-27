@@ -1,6 +1,7 @@
+# -*- coding: utf-8 -*-
 """
-storage.py - JSON 檔案型資料持久化
-存放路徑：DATA_DIR（預設 ./data/）
+storage.py - JSON file-based data persistence
+Storage path: DATA_DIR (default ./data/)
 """
 import json
 import os
@@ -14,7 +15,7 @@ _WATCHLIST_FILE = os.path.join(DATA_DIR, "watchlist.json")
 _ETF_CACHE_FILE = os.path.join(DATA_DIR, "etf_cache.json")
 
 
-# ── 持股清單 ──────────────────────────────────────────────────────────────────
+# ── Watchlist ─────────────────────────────────────────────────────────────────
 
 def load_watchlist() -> list[str]:
     if os.path.exists(_WATCHLIST_FILE):
@@ -33,7 +34,7 @@ def save_watchlist(stocks: list[str]) -> None:
 
 
 def add_stock(code: str) -> bool:
-    """回傳 True 表示成功新增，False 表示已存在"""
+    """Returns True if added, False if already exists"""
     code = code.strip().upper()
     stocks = load_watchlist()
     if code in stocks:
@@ -44,7 +45,7 @@ def add_stock(code: str) -> bool:
 
 
 def remove_stock(code: str) -> bool:
-    """回傳 True 表示成功移除，False 表示不存在"""
+    """Returns True if removed, False if not found"""
     code = code.strip().upper()
     stocks = load_watchlist()
     if code not in stocks:
@@ -54,7 +55,7 @@ def remove_stock(code: str) -> bool:
     return True
 
 
-# ── ETF 持股快取 ──────────────────────────────────────────────────────────────
+# ── ETF holdings cache ────────────────────────────────────────────────────────
 
 def load_etf_cache() -> dict:
     if os.path.exists(_ETF_CACHE_FILE):
@@ -72,7 +73,7 @@ def save_etf_cache(data: dict) -> None:
 
 
 def get_etf_previous(etf_code: str) -> list[dict] | None:
-    """取得上次快取的 ETF 持股列表"""
+    """Get previously cached ETF holdings"""
     cache = load_etf_cache()
     entry = cache.get(etf_code)
     if entry:
