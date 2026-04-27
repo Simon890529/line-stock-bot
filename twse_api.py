@@ -19,17 +19,14 @@ _HEADERS = {
     "Referer": "https://www.twse.com.tw/",
 }
 
-
 def today_tw() -> str:
     return datetime.now(_TZ).strftime("%Y%m%d")
-
 
 def _raw_to_lots(s) -> int:
     try:
         return int(str(s).replace(",", "").replace("+", "").strip()) // 1000
     except (ValueError, AttributeError):
         return 0
-
 
 def fetch_institutional(date_str: str | None = None) -> dict | None:
     if date_str is None:
@@ -45,11 +42,9 @@ def fetch_institutional(date_str: str | None = None) -> dict | None:
     except Exception as e:
         logger.error(f"TWSE T86 request failed ({date_str}): {e}")
         return None
-
     if payload.get("stat") != "OK" or not payload.get("data"):
         logger.info(f"TWSE T86: no data for {date_str}")
         return None
-
     result: dict[str, dict] = {}
     for row in payload["data"]:
         if len(row) < 18:
@@ -71,17 +66,14 @@ def fetch_institutional(date_str: str | None = None) -> dict | None:
             "dealer_net":   dealer_net,
             "three_net":    three_net,
         }
-
     if not result:
         return None
     logger.info(f"TWSE T86: {len(result)} records for {date_str}")
     return result
 
-
 def is_trading_day(date_str: str | None = None) -> bool:
     data = fetch_institutional(date_str)
     return data is not None and len(data) > 0
-
 
 def filter_watchlist(data: dict, watchlist: list[str]) -> list[dict]:
     result = []
@@ -92,7 +84,7 @@ def filter_watchlist(data: dict, watchlist: list[str]) -> list[dict]:
             result.append(entry)
         else:
             result.append({
-                "code": code, "name": "\u300c\u67e5\u7121\u8cc7\u6599\u300d",
+                "code": code, "name": "\u300e\u67e5\u7121\u8cc7\u6599\u300f",
                 "foreign_net": 0, "trust_net": 0,
                 "dealer_net": 0, "three_net": 0,
                 "foreign_buy": 0, "foreign_sell": 0,
