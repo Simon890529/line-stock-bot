@@ -14,10 +14,10 @@ etf_tracker.py - 主動型 ETF 持股爬蟲
 
 holdings 清單每筆格式：
   {
-    "code":   str,
-    "name":   str,
-    "shares": int,
-    "weight": float,
+    "code":   str,   # 股票代碼
+    "name":   str,   # 股票名稱
+    "shares": int,   # 持股張數（已 ÷1000）
+    "weight": float, # 權重 %（如有）
   }
 
 compare_holdings 輸出多一個欄位 delta_lots（張數變化）。
@@ -25,13 +25,20 @@ compare_holdings 輸出多一個欄位 delta_lots（張數變化）。
 import csv
 import io
 import logging
+from datetime import datetime
 from typing import Optional
 
+import pytz
 import requests
 import urllib3
 from bs4 import BeautifulSoup
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# 哨兵值：pocket.tw 有資料但日期不是今日
+STALE = "STALE"
+
+_TZ_TW = pytz.timezone("Asia/Taipei")
 
 from config import ETF_GSHEET_URLS
 from storage import get_etf_previous, update_etf_cache
@@ -46,6 +53,8 @@ _HEADERS = {
     ),
 }
 
+
+# ── 工具 ──────────────────────────────────────────────────────────────────────
 
 def _safe_float(s) -> float:
     try:
@@ -64,6 +73,7 @@ def _safe_lots(s) -> int:
 
 
 def _parse_table(soup, min_cols=3) -> list[dict]:
+    """通用：解析 HTML <table> 第一欄=代碼, 第二欄=名稱, 第三欄=持股/權重"""
     table = soup.find("table")
     if not table:
         return []
@@ -92,8 +102,11 @@ _POCKET_URL = (
 
 
 def _from_pockettw(etf_code: str) -> Optional[list[dict]]:
-    """pocket.tw API — 回傳今日最新持股，欄位：[日期,代號,名稱,權重(%),持有數,單位]"""
+    """pocket.tw API — 只接受日期為今日的資料，舊日期回傳 STALE 哨兵值。
+    欄位格式：[日期, 代號, 名稱, 權重(%), 持有數, 單位]
+    """
     url = _POCKET_URL.format(code=etf_code)
+    today = datetime.now(_TZ_TW).strftime("%Y%m%d")
     try:
         resp = requests.get(url, headers=_HEADERS, timeout=15, verify=False)
         resp.raise_for_status()
@@ -102,6 +115,11 @@ def _from_pockettw(etf_code: str) -> Optional[list[dict]]:
         if not rows:
             logger.info(f"PocketTW {etf_code}: no data")
             return None
+        # 欄位 0 = 日期（格式 YYYYMMDD）
+        data_date = str(rows[0][0]).strip()
+        if data_date != today:
+            logger.info(f"PocketTW {etf_code}: stale data (data={data_date}, today={today})")
+            return STALE  # type: ignore[return-value]
         holdings = []
         for row in rows:
             if len(row) < 5:
@@ -109,11 +127,11 @@ def _from_pockettw(etf_code: str) -> Optional[list[dict]]:
             code   = str(row[1]).strip()
             name   = str(row[2]).strip()
             weight = _safe_float(row[3])
-            shares = _safe_lots(row[4])
+            shares = _safe_lots(row[4])   # 持有數（股）÷ 1000 → 張
             if not code:
                 continue
             holdings.append({"code": code, "name": name, "shares": shares, "weight": weight})
-        logger.info(f"PocketTW {etf_code}: {len(holdings)} holdings")
+        logger.info(f"PocketTW {etf_code}: {len(holdings)} holdings (date={today})")
         return holdings or None
     except Exception as e:
         logger.warning(f"PocketTW {etf_code}: {e}")
@@ -134,13 +152,16 @@ def _from_gsheet(etf_code: str) -> Optional[list[dict]]:
         holdings = []
         for row in reader:
             clean_row = {k.lstrip("\ufeff").strip(): v for k, v in row.items()}
-            code       = clean_row.get("代號", clean_row.get("Code", "")).strip()
-            name       = clean_row.get("名稱", clean_row.get("Name", "")).strip()
+            code   = clean_row.get("代號", clean_row.get("Code", "")).strip()
+            name   = clean_row.get("名稱", clean_row.get("Name", "")).strip()
             shares_raw = clean_row.get("持有數", clean_row.get("股數", clean_row.get("Shares", "0"))).strip()
-            weight     = _safe_float(clean_row.get("權重", clean_row.get("Weight", "0")))
+            weight = _safe_float(clean_row.get("權重", clean_row.get("Weight", "0")))
             if not code or code in ("C_NTD", "CASH"):
                 continue
-            holdings.append({"code": code, "name": name, "shares": _safe_lots(shares_raw), "weight": weight})
+            holdings.append({
+                "code": code, "name": name,
+                "shares": _safe_lots(shares_raw), "weight": weight,
+            })
         logger.info(f"GSheet {etf_code}: {len(holdings)} holdings")
         return holdings or None
     except Exception as e:
@@ -180,6 +201,8 @@ def _scrape_capital(etf_code: str) -> Optional[list[dict]]:
     return None
 
 
+# ── 統一投信（00981A）────────────────────────────────────────────────────────
+
 def _scrape_president(etf_code: str) -> Optional[list[dict]]:
     url = f"https://www.puif.com.tw/api/ETF/Holdings?code={etf_code}"
     try:
@@ -209,6 +232,8 @@ def _scrape_president(etf_code: str) -> Optional[list[dict]]:
         logger.warning(f"President {etf_code}: {e}")
     return None
 
+
+# ── 復華投信（00991A）────────────────────────────────────────────────────────
 
 def _scrape_fuh_hwa(etf_code: str) -> Optional[list[dict]]:
     url = f"https://www.fuhwaetf.com.tw/api/etf/holdings?code={etf_code}"
@@ -240,6 +265,8 @@ def _scrape_fuh_hwa(etf_code: str) -> Optional[list[dict]]:
     return None
 
 
+# ── 安聯投信（00993A）────────────────────────────────────────────────────────
+
 def _scrape_allianz(etf_code: str) -> Optional[list[dict]]:
     url = f"https://www.allianzgi.com.tw/api/etf/portfolio?code={etf_code}"
     try:
@@ -270,6 +297,8 @@ def _scrape_allianz(etf_code: str) -> Optional[list[dict]]:
     return None
 
 
+# ── 元大投信 ──────────────────────────────────────────────────────────────────
+
 def _scrape_yuanta(etf_code: str) -> Optional[list[dict]]:
     url = f"https://www.yuantaetfs.com/api/get_etf_stockcomponent?strDate=&fundId={etf_code}"
     try:
@@ -290,6 +319,8 @@ def _scrape_yuanta(etf_code: str) -> Optional[list[dict]]:
         return None
 
 
+# ── 通用 TWSE 備援 ────────────────────────────────────────────────────────────
+
 def _scrape_general(etf_code: str) -> Optional[list[dict]]:
     url = f"https://www.twse.com.tw/zh/ETF/fund/{etf_code}"
     try:
@@ -297,12 +328,13 @@ def _scrape_general(etf_code: str) -> Optional[list[dict]]:
         soup = BeautifulSoup(resp.text, "html.parser")
         holdings = _parse_table(soup)
         if holdings:
-            logger.info(f"General {etf_code}: {len(holdings)} holdings")
             return holdings
     except Exception as e:
         logger.warning(f"General {etf_code}: {e}")
     return None
 
+
+# ── 爬蟲分發器 ────────────────────────────────────────────────────────────────
 
 _SCRAPERS = {
     "capital":   _scrape_capital,
@@ -322,6 +354,9 @@ def fetch_etf_holdings(etf_code: str, company: str, date_str: str) -> Optional[l
     """取得 ETF 最新持股並更新快取（優先順序：pocket.tw → GSheet → 投信爬蟲）"""
     # 1. pocket.tw API（最可靠，五檔均支援）
     holdings = _from_pockettw(etf_code)
+    if holdings == STALE:
+        # 資料日期不是今天，直接回報，不使用舊資料做差異分析
+        return STALE  # type: ignore[return-value]
     if holdings:
         update_etf_cache(etf_code, date_str, holdings)
         return holdings
@@ -339,7 +374,7 @@ def fetch_etf_holdings(etf_code: str, company: str, date_str: str) -> Optional[l
         update_etf_cache(etf_code, date_str, holdings)
         return holdings
 
-    # 4. 通用 TWSE 備援
+    # 4. 通用 TWSE 備援（若不是已使用通用的話）
     if scraper != _scrape_general:
         holdings = _scrape_general(etf_code)
         if holdings:
@@ -350,28 +385,51 @@ def fetch_etf_holdings(etf_code: str, company: str, date_str: str) -> Optional[l
     return None
 
 
+# ── 持股變化比較 ──────────────────────────────────────────────────────────────
+
 def compare_holdings(prev: list[dict] | None, curr: list[dict]) -> dict:
     if not prev:
         return {"added": [], "removed": [], "changed": [], "top10": curr[:10]}
+
     prev_map = {h["code"]: h for h in prev}
     curr_map = {h["code"]: h for h in curr}
+
     added = []
     for c in curr_map:
         if c not in prev_map:
-            h = curr_map[c].copy(); h["delta_lots"] = h["shares"]; added.append(h)
+            h = curr_map[c].copy()
+            h["delta_lots"] = h["shares"]
+            added.append(h)
+
     removed = []
     for c in prev_map:
         if c not in curr_map:
-            h = prev_map[c].copy(); h["delta_lots"] = -h["shares"]; removed.append(h)
+            h = prev_map[c].copy()
+            h["delta_lots"] = -h["shares"]
+            removed.append(h)
+
     changed = []
     for c in curr_map:
         if c in prev_map:
             delta = curr_map[c]["shares"] - prev_map[c]["shares"]
             if delta != 0:
-                h = curr_map[c].copy(); h["prev_shares"] = prev_map[c]["shares"]; h["delta_lots"] = delta; changed.append(h)
+                h = curr_map[c].copy()
+                h["prev_shares"] = prev_map[c]["shares"]
+                h["delta_lots"]  = delta
+                changed.append(h)
+
     for h in changed:
-        if h["delta_lots"] > 0: added.append(h)
-        else: removed.append(h)
+        if h["delta_lots"] > 0:
+            added.append(h)
+        else:
+            removed.append(h)
+
     added.sort(key=lambda x: abs(x.get("delta_lots", 0)), reverse=True)
     removed.sort(key=lambda x: abs(x.get("delta_lots", 0)), reverse=True)
-    return {"added": added, "removed": removed, "changed": changed, "top10": curr[:10]}
+
+    return {
+        "added":   added,
+        "removed": removed,
+        "changed": changed,
+        "top10":   curr[:10],
+    }
