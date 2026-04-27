@@ -1,10 +1,11 @@
+# -*- coding: utf-8 -*-
 """
-app.py - Flask 主程式 / LINE Webhook 入口
+app.py - Flask main app / LINE Webhook entry point
 
-端點：
+Routes:
   POST /webhook      LINE Messaging API Webhook
-  GET  /health       健康檢查（供 Keep-Alive 服務 ping）
-  POST /daily-report Render Cron Job 觸發每日報告
+  GET  /health       Health check (for keep-alive ping)
+  POST /run-daily    Trigger daily report (called by cron-job.org)
 """
 import logging
 import os
@@ -60,7 +61,7 @@ def on_message(event):
 
     text    = event.message.text.strip()
     user_id = event.source.user_id
-    logger.info(f"[{user_id}] ← {text!r}")
+    logger.info(f"[{user_id}] <- {text!r}")
 
     reply = process_command(text, user_id)
     if reply:
@@ -68,23 +69,22 @@ def on_message(event):
             MessagingApi(api_client).reply_message(
                 ReplyMessageRequest(
                     reply_token=event.reply_token,
-                    messages=[TextMessage(text=reply[:5000])],  # LINE 上限 5000 字
+                    messages=[TextMessage(text=reply[:5000])],
                 )
             )
 
 
-# ── 健康檢查 ──────────────────────────────────────────────────────────────────
+# ── Health check ──────────────────────────────────────────────────────────────
 
 @app.route("/health")
 def health():
     return "OK", 200
 
 
-# ── 每日報告觸發端點（Render Cron Job 呼叫）──────────────────────────────────
+# ── Daily report trigger (called by cron-job.org) ────────────────────────────
 
-@app.route("/daily-report", methods=["GET", "POST"])
-def daily_report():
-    # 簡單安全驗證：需帶正確的 secret query param 或 header
+@app.route("/run-daily", methods=["GET", "POST"])
+def run_daily():
     secret = os.environ.get("CRON_SECRET", "")
     incoming = request.args.get("secret", "") or request.headers.get("X-Cron-Secret", "")
     if secret and incoming != secret:
@@ -95,10 +95,9 @@ def daily_report():
     return jsonify({"status": "ok", "result": result})
 
 
-# ── 啟動 ──────────────────────────────────────────────────────────────────────
+# ── Startup ───────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    # 本機測試時可選擇啟動 APScheduler
     import os
     if os.environ.get("USE_APSCHEDULER", "false").lower() == "true":
         from scheduler_job import start_scheduler
