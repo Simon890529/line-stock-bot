@@ -1,10 +1,11 @@
+# -*- coding: utf-8 -*-
 """
-scheduler_job.py - 每日 16:30 盤後報告
+scheduler_job.py - Daily 16:30 after-market report
 
-1. 確認今日是否為交易日
-2. 取得持股三大法人進出
-3. 取得 5 檔主動型 ETF 持股變化
-4. 合併成一則 LINE Push Message 推播給使用者
+1. Check if today is a trading day
+2. Fetch watchlist institutional investor data
+3. Fetch 5 active ETF holdings changes
+4. Merge into a LINE Push Message and send to user
 """
 import logging
 from datetime import datetime
@@ -25,17 +26,17 @@ logger = logging.getLogger(__name__)
 _TZ = pytz.timezone("Asia/Taipei")
 _line_config = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 
-_LINE_LIMIT = 4900  # LINE 單則訊息字元上限（留 100 餘量）
+_LINE_LIMIT = 4900  # LINE message character limit (with 100 buffer)
 
 
-# ── 推播工具 ──────────────────────────────────────────────────────────────────
+# ── Push helper ───────────────────────────────────────────────────────────────
 
 def _push(text: str) -> None:
     if not LINE_USER_ID:
-        logger.warning("LINE_USER_ID 未設定，無法推播")
+        logger.warning("LINE_USER_ID not set, cannot push")
         return
     if not LINE_CHANNEL_ACCESS_TOKEN:
-        logger.warning("LINE_CHANNEL_ACCESS_TOKEN 未設定，無法推播")
+        logger.warning("LINE_CHANNEL_ACCESS_TOKEN not set, cannot push")
         return
 
     chunks = _split(text)
@@ -52,7 +53,7 @@ def _push(text: str) -> None:
 
 
 def _split(text: str, limit: int = _LINE_LIMIT) -> list[str]:
-    """長訊息按行切割，確保每段 ≤ limit 字元"""
+    """Split long messages by line, ensuring each chunk <= limit chars"""
     if len(text) <= limit:
         return [text]
     parts, current = [], ""
@@ -68,28 +69,28 @@ def _split(text: str, limit: int = _LINE_LIMIT) -> list[str]:
     return parts or [text[:limit]]
 
 
-# ── 每日報告主邏輯 ────────────────────────────────────────────────────────────
+# ── Daily report main logic ───────────────────────────────────────────────────
 
 def run_daily_report() -> str:
     """
-    建立並推播當日盤後報告。
-    回傳執行狀態字串（供 HTTP 端點回應）。
+    Build and push daily after-market report.
+    Returns status string for HTTP endpoint response.
     """
     date_str = today_tw()
-    logger.info(f"Daily report start — {date_str}")
+    logger.info(f"Daily report start - {date_str}")
 
-    # ── 三大法人 ─────────────────────────────────────────────────────────────
+    # Institutional investors
     watchlist = load_watchlist()
     inst_data = fetch_institutional(date_str)
 
     if inst_data is None:
-        # 非交易日 → 只推一則說明，不執行 ETF
+        # Non-trading day - push a brief notice
         _push(build_no_data_message(date_str))
         return f"non-trading-day:{date_str}"
 
     records = filter_watchlist(inst_data, watchlist)
 
-    # ── ETF 持股變化 ─────────────────────────────────────────────────────────
+    # ETF holdings changes
     etf_results = []
     for etf in TRACKED_ETFS:
         code, name, company = etf["code"], etf["name"], etf["company"]
@@ -98,7 +99,7 @@ def run_daily_report() -> str:
         diff = compare_holdings(prev, curr) if curr is not None else None
         etf_results.append((code, name, diff))
 
-    # ── 合併成一則（或分段）推播 ──────────────────────────────────────────────
+    # Merge and push
     report = build_daily_report(date_str, records, etf_results)
     _push(report)
 
@@ -106,7 +107,7 @@ def run_daily_report() -> str:
     return f"ok:{date_str}"
 
 
-# ── APScheduler（本機測試用）────────────────────────────────────────────────
+# ── APScheduler (for local testing) ──────────────────────────────────────────
 
 def start_scheduler() -> None:
     try:
@@ -122,4 +123,4 @@ def start_scheduler() -> None:
         scheduler.start()
         logger.info("APScheduler: daily report at 16:30 (Mon-Fri, Taipei)")
     except ImportError:
-        logger.warning("apscheduler not installed — using Render Cron Job")
+        logger.warning("apscheduler not installed - using Render Cron Job")
