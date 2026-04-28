@@ -72,15 +72,22 @@ def fetch_institutional(date_str: str | None = None) -> dict | None:
 
     result: dict[str, dict] = {}
     for row in payload["data"]:
-        if len(row) < 19:
+        if len(row) < 18:
             continue
         code = row[0].strip()
         name = row[1].strip()
 
         foreign_net = _raw_to_lots(row[4])
         trust_net   = _raw_to_lots(row[10])
-        dealer_net  = _raw_to_lots(row[11])   # 自營商買賣超（合計），= 自行[14] + 避險[17]
-        three_net   = _raw_to_lots(row[18])   # 三大法人買賣超（TWSE 官方合計）
+
+        if len(row) >= 19:
+            # 新格式（19 欄）：col[11] = 自營商買賣超(合計)，col[18] = 三大法人買賣超
+            dealer_net = _raw_to_lots(row[11])
+            three_net  = _raw_to_lots(row[18])
+        else:
+            # 舊格式（18 欄）：col[13] = 自行超，col[16] = 避險超，col[17] = 三大法人超
+            dealer_net = _raw_to_lots(row[13]) + _raw_to_lots(row[16])
+            three_net  = _raw_to_lots(row[17])
 
         result[code] = {
             "name":         name,
