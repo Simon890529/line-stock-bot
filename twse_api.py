@@ -17,8 +17,11 @@ TWSE T86 原始欄位（共 19 欄，index 0–18）：
 import logging
 from datetime import datetime
 
+import urllib3
 import pytz
 import requests
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +62,7 @@ def fetch_institutional(date_str: str | None = None) -> dict | None:
         f"?response=json&date={date_str}&selectType=ALLBUT0999"
     )
     try:
-        resp = requests.get(url, headers=_HEADERS, timeout=20)
+        resp = requests.get(url, headers=_HEADERS, timeout=20, verify=False)
         resp.raise_for_status()
         payload = resp.json()
     except Exception as e:
