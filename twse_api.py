@@ -1,59 +1,18 @@
 """
-twse_api.py - 台灣證券交易所 (TWSE) 三大法人 API 串接
-資料來源：https://www.twse.com.tw/fund/T86
+twse_api.py - å°ç£è­å¸äº¤ææ (TWSE) ä¸å¤§æ³äºº API ä¸²æ¥
+è³æä¾æºï¼https://www.twse.com.tw/fund/T86
 
-TWSE T86 原始欄位（共 19 欄，index 0–18）：
- 0  證券代號          1  證券名稱
- 2  外陸資買進股數     3  外陸資賣出股數     4  外陸資買賣超股數
- 5  外資自營商買進     6  外資自營商賣出     7  外資自營商買賣超
- 8  投信買進股數       9  投信賣出股數      10  投信買賣超股數
-11  自營商買賣超股數(合計)
-12  自營商買進(自行)  13  自營商賣出(自行)  14  自營商買賣超(自行)
-15  自營商買進(避險)  16  自營商賣出(避險)  17  自營商買賣超(避險)
-18  三大法人買賣超股數
+TWSE T86 åå§æ¬ä½ï¼å± 19 æ¬ï¼index 0â18ï¼ï¼
+ 0  è­å¸ä»£è          1  è­å¸åç¨±
+ 2  å¤é¸è³è²·é²è¡æ¸     3  å¤é¸è³è³£åºè¡æ¸     4  å¤é¸è³è²·è³£è¶è¡æ¸
+ 5  å¤è³èªçåè²·é²     6  å¤è³èªçåè³£åº     7  å¤è³èªçåè²·è³£è¶
+ 8  æä¿¡è²·é²è¡æ¸       9  æä¿¡è³£åºè¡æ¸      10  æä¿¡è²·è³£è¶è¡æ¸
+11  èªçåè²·è³£è¶è¡æ¸(åè¨)
+12  èªçåè²·é²(èªè¡)  13  èªçåè³£åº(èªè¡)  14  èªçåè²·è³£è¶(èªè¡)
+15  èªçåè²·é²(é¿éª)  16  èªçåè³£åº(é¿éª)  17  èªçåè²·è³£è¶(é¿éª)
+18  ä¸å¤§æ³äººè²·è³£è¶è¡æ¸
 
-⚠️ 原始單位：股（股）。本模組一律 ÷1,000 轉換成「張」後儲存。
-"""
-import logging
-from datetime import datetime
-
-import urllib3
-import pytz
-import requests
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-logger = logging.getLogger(__name__)
-
-_TZ = pytz.timezone("Asia/Taipei")
-_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-twse_api.py - 台灣證券交易所 (TWSE) 三大法人 API 串接
-資料來源：https://www.twse.com.tw/fund/T86
-
-TWSE T86 原始欄位（共 19 欄，index 0-18）：
- 0  證券代號          1  證券名稱
- 2  外陸資買進股數     3  外陸資賣出股數     4  外陸資買賣超股數
- 5  外資自營商買進     6  外資自營商賣出     7  外資自營商買賣超
- 8  投信買進股數       9  投信賣出股數      10  投信買賣超股數
-11  自營商買賣超股數(合計)
-12  自營商買進(自行)  13  自營商賣出(自行)  14  自營商買賣超(自行)
-15  自營商買進(避險)  16  自營商賣出(避險)  17  自營商買賣超(避險)
-18  三大法人買賣超股數
-
-上櫃（TPEX）欄位對應（共 24 欄，index 0-23）：
-  0  代號          1  名稱
-  2  外資及陸資買進 3  賣出  4  買賣超
-  5  外資自營商買進 6  賣出  7  買賣超
-  8  外資合計買進   9  賣出  10 買賣超
- 11  投信買進      12  賣出  13 買賣超
- 14  自營(自行)買進 15 賣出  16 買賣超
- 17  自營(避險)買進 18 賣出  19 買賣超
- 20  自營合計買進  21  賣出  22 買賣超
- 23  三大法人買賣超股數合計
-
-⚠️ 原始單位：股。本模組一律 ÷1,000 轉換成「張」後儲存。
+â ï¸ åå§å®ä½ï¼è¡ï¼è¡ï¼ãæ¬æ¨¡çµä¸å¾ Ã·1,000 è½ææãå¼µãå¾å²å­ã
 """
 import logging
 from datetime import datetime
@@ -76,6 +35,19 @@ _HEADERS = {
     "Referer": "https://www.twse.com.tw/",
 }
 
+
+def today_tw() -> str:
+    return datetime.now(_TZ).strftime("%Y%m%d")
+
+
+def _raw_to_lots(s) -> int:
+    """åå§å­ä¸²ï¼è¡ï¼Ã· 1000 â å¼µï¼æ´æ¸ï¼"""
+    try:
+        return int(str(s).replace(",", "").replace("+", "").strip()) // 1000
+    except (ValueError, AttributeError):
+        return 0
+
+
 _TPEX_URL = "https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade"
 _TPEX_HEADERS = {
     "User-Agent": (
@@ -89,29 +61,30 @@ _TPEX_HEADERS = {
 }
 
 
-def today_tw() -> str:
-    return datetime.now(_TZ).strftime("%Y%m%d")
-
-
-def _raw_to_lots(s) -> int:
-    """原始字串（股）÷ 1000 → 張（整數）"""
-    try:
-        return int(str(s).replace(",", "").replace("+", "").strip()) // 1000
-    except (ValueError, AttributeError):
-        return 0
-
-
 def _greg_to_roc(date_str: str) -> str:
-    """YYYYMMDD → 民國年格式，例如 '20260427' → '115/4/27'"""
+    """YYYYMMDD â æ°åå¹´æ ¼å¼ï¼ä¾å¦ '20260427' â '115/4/27'"""
     year  = int(date_str[:4]) - 1911
     month = int(date_str[4:6])
     day   = int(date_str[6:8])
     return f"{year}/{month}/{day}"
 
-def _fetch_tpex_institutional(date_str: str):
+
+def _fetch_tpex_institutional(date_str: str) -> dict | None:
     """
-    取得上櫃三大法人資料（TPEX POST API）。
-    回傳：dict { 股票代號: {...} }  或 None
+    åå¾ä¸æ«ä¸å¤§æ³äººè³æï¼TPEX POST APIï¼ã
+    åå³ï¼dict { è¡ç¥¨$»£è: {...} }  æ Noneï¼éäº¤ææ¥ / ç¡è³æ / é¯èª¤ï¼
+
+    TPEX æ¬ä½å°æï¼å± 24 æ¬ï¼index 0â23ï¼ï¼
+      0  ä»£è          1  åç¨±
+      2  å¤è³åé¸è³è²·é² 3  è³£åº  4  è²·è³£è¶
+      5  å¤è³èªçåè²·é² 6  è³£åº  7  è²·è³£è¶
+      8  å¤è³åè¨è²·é²   9  è³£åº  10 è²·è³£è¶
+     11  æä¿¡è²·é²      12  è³£åº  13 è²·è³£è¶
+     14  èªç(èªè¡)è²·é² 15 è³£åº  16 è²·è³£è¶
+     17  èªç(é¿éª)è²·é² 18 è³£åº  19 è²·è³£è¶
+     20  èªçåè¨è²·é²  21  è³£åº  22 è²·è³£è¶
+     23  ä¸å¤§æ³äººè²·è³£è¶è¡æ¸åè¨
+    å®ä½ï¼è¡ï¼Ã·1000 â å¼µ
     """
     roc_date = _greg_to_roc(date_str)
     body = f"type=Daily&sect=AL&date={roc_date}&id="
@@ -130,7 +103,7 @@ def _fetch_tpex_institutional(date_str: str):
         logger.info(f"TPEX dailyTrade: no data for {date_str}")
         return None
 
-    result = {}
+    result: dict[str, dict] = {}
     for row in tables[0]["data"]:
         if len(row) < 24:
             continue
@@ -155,11 +128,11 @@ def _fetch_tpex_institutional(date_str: str):
     return result
 
 
-def fetch_institutional(date_str=None):
+def fetch_institutional(date_str: str | None = None) -> dict | None:
     """
-    取得三大法人資料（上市 + 上櫃合併）。
-    回傳：dict { 股票代號: {..., 數字單位均為「張」} }
-         或 None（非交易日 / 資料尚未更新）
+    åå¾ä¸å¤§æ³äººè³æã
+    åå³ï¼dict { è¡ç¥¨ä»£è: {..., æ¸å­å®ä½åçºãå¼µã} }
+         æ Noneï¼éäº¤ææ¥ / è³æå°æªæ´æ°ï¼
     """
     if date_str is None:
         date_str = today_tw()
@@ -180,7 +153,7 @@ def fetch_institutional(date_str=None):
         logger.info(f"TWSE T86: no data for {date_str}")
         return None
 
-    result = {}
+    result: dict[str, dict] = {}
     for row in payload["data"]:
         if len(row) < 18:
             continue
@@ -191,9 +164,11 @@ def fetch_institutional(date_str=None):
         trust_net   = _raw_to_lots(row[10])
 
         if len(row) >= 19:
+            # æ°æ ¼å¼ï¼19 æ¬ï¼ï¼col[11] = èªçåè²·è³£è¶(åè¨)ï¼col[18] = ä¸å¤§æ³äººè²·è³£è¶
             dealer_net = _raw_to_lots(row[11])
             three_net  = _raw_to_lots(row[18])
         else:
+            # èæ ¼å¼ï¼18 æ¬ï¼ï¼col[13] = èªè¡è¶ï¼col[16] = é¿éªè¶ï¼col[17] = ä¸å¤§æ³äººè¶
             dealer_net = _raw_to_lots(row[13]) + _raw_to_lots(row[16])
             three_net  = _raw_to_lots(row[17])
 
@@ -214,7 +189,7 @@ def fetch_institutional(date_str=None):
 
     logger.info(f"TWSE T86: {len(result)} records for {date_str}")
 
-    # 合併上櫃（TPEX）資料；任何例外均不影響上市結果
+    # åä½µä¸æ«ï¼TPEXï¼è³æï¼ä»»ä½ä¾å¤åä¸å½±é¿ä¸å¸çµæ
     try:
         tpex = _fetch_tpex_institutional(date_str)
         if tpex:
@@ -226,25 +201,10 @@ def fetch_institutional(date_str=None):
     return result
 
 
-def is_trading_day(date_str=None) -> bool:
+def is_trading_day(date_str: str | None = None) -> bool:
     data = fetch_institutional(date_str)
     return data is not None and len(data) > 0
 
 
-def filter_watchlist(data: dict, watchlist: list) -> list:
-    """篩選持股清單；查無資料的股票補上佔位欄位"""
-    result = []
-    for code in watchlist:
-        if code in data:
-            entry = data[code].copy()
-            entry["code"] = code
-            result.append(entry)
-        else:
-            result.append({
-                "code": code, "name": "（查無資料）",
-                "foreign_net": 0, "trust_net": 0,
-                "dealer_net": 0, "three_net": 0,
-                "foreign_buy": 0, "foreign_sell": 0,
-                "trust_buy": 0, "trust_sell": 0,
-            })
-    return result
+def filter_watchlist(data: dict, watchlist: list[str]) -> list[dict]:
+    """ç¯©é¸æè¡æ¸å®ï»~VþhÈK®KÙÎK.K®*X®ijîZØ¾i8ÞKÙÎK.i8ÞKÙÎYÞzjÈ®KØÒ"" ¢&W7VÇBÒµÐ¢f÷"6öFRâvF6Æ7C ¢b6öFRâFF ¢VçG'ÒFF¶6öFUÒæ6÷¢VçG'²&6öFR%ÒÒ6öFP¢&W7VÇBæVæBVçG'¢VÇ6S ¢&W7VÇBæVæB°¢&6öFR#¢6öFRÂ&æÖR#¢.ûÈiú^xJ8~iiûÈ"À¢&f÷&VvåöæWB#¢Â'G'W7EöæWB#¢À¢&FVÆW%öæWB#¢Â'F&VUöæWB#¢À¢&f÷&Vvåö'W#¢Â&f÷&Vvå÷6VÆÂ#¢À¢'G'W7Eö'W#¢Â'G'W7E÷6VÆÂ#¢À¢Ò¢&WGW&â&W7VÇ@
